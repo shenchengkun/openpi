@@ -36,9 +36,15 @@ class PaliGemmaWithExpertModel(nn.Module):
         vlm_config_hf.text_config.use_adarms = use_adarms[0]
         vlm_config_hf.text_config.adarms_cond_dim = vlm_config.width if use_adarms[0] else None
         vlm_config_hf.vision_config.intermediate_size = 4304
-        vlm_config_hf.vision_config.projection_dim = 2048
+        vlm_config_hf.vision_config.projection_dim = vlm_config.width
         vlm_config_hf.vision_config.projector_hidden_act = "gelu_fast"
         vlm_config_hf.vision_config.torch_dtype = "float32"
+
+        print("vlm_config.width =", vlm_config.width)
+        print("text_config.hidden_size =", vlm_config_hf.text_config.hidden_size)
+        print("text_config.head_dim =", getattr(vlm_config_hf.text_config, "head_dim", None))
+        print("text_config.num_attention_heads =", getattr(vlm_config_hf.text_config, "num_attention_heads", None))
+        print("vision projection_dim =", getattr(vlm_config_hf.vision_config, "projection_dim", None))
 
         action_expert_config_hf = CONFIG_MAPPING["gemma"](
             head_dim=action_expert_config.head_dim,
@@ -97,6 +103,7 @@ class PaliGemmaWithExpertModel(nn.Module):
         use_cache: bool | None = None,
         adarms_cond: list[torch.Tensor] | None = None,
     ):
+        print("chengkun gemma 66")
         if adarms_cond is None:
             adarms_cond = [None, None]
         if inputs_embeds[1] is None:

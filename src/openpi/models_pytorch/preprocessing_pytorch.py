@@ -141,9 +141,18 @@ def preprocess_observation_pytorch(
             # Back to [-1, 1]
             image = image * 2.0 - 1.0
 
-        # Convert back to [B, C, H, W] format if it was originally channels-first
-        if is_channels_first:
-            image = image.permute(0, 3, 1, 2)  # [B, H, W, C] -> [B, C, H, W]
+        # Always return PyTorch images as [B, C, H, W]
+        if image.ndim != 4:
+            raise ValueError(f"Expected 4D batched image tensor, got shape {tuple(image.shape)}")
+
+        if image.shape[1] in (1, 3):
+            # already BCHW
+            pass
+        elif image.shape[-1] in (1, 3):
+            # BHWC -> BCHW
+            image = image.permute(0, 3, 1, 2).contiguous()
+        else:
+            raise ValueError(f"Cannot infer channel dimension from shape {tuple(image.shape)}")
 
         out_images[key] = image
 
