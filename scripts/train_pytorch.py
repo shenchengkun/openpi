@@ -305,6 +305,68 @@ def log_memory_usage(device, step, phase="unknown"):
         f"Step {step} ({phase}): GPU memory - allocated: {memory_allocated:.2f}GB, reserved: {memory_reserved:.2f}GB, free: {memory_free:.2f}GB, peak_allocated: {max_memory_allocated:.2f}GB, peak_reserved: {max_memory_reserved:.2f}GB{ddp_info}"
     )
 
+def apply_pytorch_trainable_filter(model, config):
+    config_name = config.name.lower()
+
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    logging.info(
+        "Model params: trainable=%.2fM total=%.2fM trainable_ratio=%.2f%%",
+        trainable / 1e6,
+        total / 1e6,
+        100.0 * trainable / total,
+    )
+
+    # default: full finetune
+    trainable_patterns = None
+
+    # low memory pi0.5 configs
+    if "pi05_libero_low_mem_finetune" in config_name:
+        trainable_patterns = [
+            "action_out_proj",
+            "action_in_proj",
+            "time_mlp",
+        ]
+
+    # future extension examples:
+    # elif "lora" in config_name:
+    #     trainable_patterns = ["lora", "adapter"]
+    #
+    # elif "head_only" in config_name:
+    #     trainable_patterns = ["action_out_proj"]
+
+    if trainable_patterns is not None:
+        logging.info(
+            "Applying PyTorch trainable filter for config=%s patterns=%s",
+            config.name,
+            trainable_patterns,
+        )
+
+        for name, p in model.named_parameters():
+            lname = name.lower()
+
+            p.requires_grad = any(
+                pattern in lname
+                for pattern in trainable_patterns
+            )
+
+    trainable = sum(
+        p.numel()
+        for p in model.parameters()
+        if p.requires_grad
+    )
+
+    total = sum(
+        p.numel()
+        for p in model.parameters()
+    )
+
+    logging.info(
+        "After PyTorch filter: trainable=%.2fM total=%.2fM ratio=%.4f%%",
+        trainable / 1e6,
+        total / 1e6,
+        100.0 * trainable / total,
+    )
 
 def train_loop(config: _config.TrainConfig):
     use_ddp, local_rank, device = setup_ddp()
@@ -455,8 +517,10 @@ def train_loop(config: _config.TrainConfig):
     end_lr = config.lr_schedule.decay_lr
 
     # Create optimizer with config parameters
+    #Pytorch filter support is not mapped from jax so far, use hardcoded filter for now
+    apply_pytorch_trainable_filter(model, config)
     optim = torch.optim.AdamW(
-        model.parameters(),
+        [p for p in model.parameters() if p.requires_grad],
         lr=peak_lr,
         betas=(config.optimizer.b1, config.optimizer.b2),
         eps=config.optimizer.eps,
